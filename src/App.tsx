@@ -1,5 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import {
+  defaultCareer,
+  loadSave,
+  SAVE_KEY,
+  serviceCost,
+  upgradeCost,
+  advanceCareer,
+  deliveryReward,
+  milestones,
+  regionAt,
+  type Career,
+} from "./expansion";
+import { drawWorldDetails } from "./WorldDetails";
+const initialSave = loadSave();
+
 type IconName =
   | "grid"
   | "map"
@@ -147,7 +162,14 @@ function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   );
 }
 
-type WorldState = { x: number; y: number; heading: number; speed: number; steering: number };
+type WorldState = {
+  x: number;
+  y: number;
+  heading: number;
+  speed: number;
+  steering: number;
+  environment?: Career;
+};
 
 const cities = [
   { name: "New Orleans", short: "NOLA", x: 0, y: 5, color: "#ffb800", major: true },
@@ -239,6 +261,41 @@ const jobs = [
   },
 ];
 
+jobs.push(
+  {
+    from: "Houston",
+    to: "Bayou Vista",
+    cargo: "Refrigerated seafood",
+    pay: 7400,
+    miles: 120,
+    time: "2h 10m",
+  },
+  {
+    from: "Atlanta",
+    to: "New Orleans",
+    cargo: "Medical equipment",
+    pay: 21500,
+    miles: 470,
+    time: "7h 10m",
+  },
+  {
+    from: "Desert Springs",
+    to: "Houston",
+    cargo: "Wind turbine components",
+    pay: 16900,
+    miles: 310,
+    time: "5h 00m",
+  },
+  {
+    from: "Miami",
+    to: "Palm Coast",
+    cargo: "Emergency relief supplies",
+    pay: 13800,
+    miles: 246,
+    time: "4h 15m",
+  },
+);
+
 function WorldCanvas({
   worldRef,
   color,
@@ -316,7 +373,7 @@ function WorldCanvas({
       }
 
       const roadPieces: {
-        points: { x: number; y: number }[];
+        points: { x: number; y: number; scale: number }[];
         distance: number;
         center: { x: number; y: number }[];
       }[] = [];
@@ -429,6 +486,15 @@ function WorldCanvas({
         context.stroke();
       }
       context.globalAlpha = 1;
+      drawWorldDetails(
+        context,
+        width,
+        height,
+        world,
+        world.environment || defaultCareer,
+        frame / 60,
+        roadLinks.map(([a, b]) => [cities[a], cities[b]]),
+      );
       frame += 1;
       animation = requestAnimationFrame(draw);
     };
@@ -436,7 +502,13 @@ function WorldCanvas({
     return () => cancelAnimationFrame(animation);
   }, [color, worldRef]);
 
-  return <canvas ref={canvasRef} className="world-canvas" aria-label="Driveable 3D state" />;
+  return (
+    <canvas
+      ref={canvasRef}
+      className="world-canvas"
+      aria-label="Driveable perspective highway environment"
+    />
+  );
 }
 
 function TruckScene({
@@ -617,64 +689,148 @@ function TruckScene({
 }
 
 function App() {
+  const [career, setCareer] = useState<Career>(initialSave?.career || defaultCareer);
+  const [showExpansion, setShowExpansion] = useState(false);
+  const [routePaid, setRoutePaid] = useState(initialSave?.routePaid || false);
+  const [saveError, setSaveError] = useState(false);
+  const weatherClock = useRef(0);
+  const live = useRef({ fuel: initialSave?.fuel ?? 72, career });
   const [activeNav, setActiveNav] = useState("Command");
-  const [moving, setMoving] = useState(true);
-  const [speed, setSpeed] = useState(64);
-  const [progress, setProgress] = useState(38);
-  const [money, setMoney] = useState(128450);
-  const [jobIndex, setJobIndex] = useState(0);
-  const [destination, setDestination] = useState(cities[1]);
+  const [moving, setMoving] = useState(false);
+  const [speed, setSpeed] = useState(0);
+  const [progress, setProgress] = useState(initialSave?.progress ?? 38);
+  const [money, setMoney] = useState(initialSave?.money ?? 128450);
+  const [jobIndex, setJobIndex] = useState(initialSave?.jobIndex ?? 0);
+  const [destination, setDestination] = useState(
+    cities.find((c) => c.name === jobs[initialSave?.jobIndex ?? 0].to) || cities[1],
+  );
   const [showJobs, setShowJobs] = useState(false);
   const [showCustomize, setShowCustomize] = useState(false);
-  const [accent, setAccent] = useState("#f7b500");
-  const [company, setCompany] = useState("Gulf Coast Logistics");
+  const [accent, setAccent] = useState(initialSave?.accent || "#f7b500");
+  const [company, setCompany] = useState(initialSave?.company || "Gulf Coast Logistics");
   const [toast, setToast] = useState("");
   const [steering, setSteering] = useState(0);
   const [laneOffset, setLaneOffset] = useState(0);
-  const [fuel, setFuel] = useState(72);
+  const [fuel, setFuel] = useState(initialSave?.fuel ?? 72);
   const [immersive, setImmersive] = useState(true);
   const [cameraMode, setCameraMode] = useState<"cockpit" | "hood" | "chase">("cockpit");
   const [controllerConnected, setControllerConnected] = useState(false);
-  const [worldPosition, setWorldPosition] = useState({ x: 0, y: 5, heading: -1.42 });
-  const worldRef = useRef<WorldState>({ x: 0, y: 5, heading: -1.42, speed: 64, steering: 0 });
+  const [worldPosition, setWorldPosition] = useState(
+    initialSave?.position || { x: 0, y: 5, heading: -1.42 },
+  );
+  const worldRef = useRef<WorldState>({ ...worldPosition, speed: 0, steering: 0 });
   const controls = useRef({ up: false, down: false, left: false, right: false });
   const gamepadInput = useRef({ throttle: 0, brake: 0, steer: 0 });
   const job = jobs[jobIndex];
 
   useEffect(() => {
-    if (!moving) return;
+    live.current = { fuel, career };
+    worldRef.current.environment = career;
+  }, [fuel, career]);
+  const snapshot = useRef({
+    money,
+    fuel,
+    progress,
+    jobIndex,
+    company,
+    accent,
+    position: worldPosition,
+    career,
+    routePaid,
+  });
+  useEffect(() => {
+    snapshot.current = {
+      money,
+      fuel,
+      progress,
+      jobIndex,
+      company,
+      accent,
+      position: worldPosition,
+      career,
+      routePaid,
+    };
+  }, [money, fuel, progress, jobIndex, company, accent, worldPosition, career, routePaid]);
+  useEffect(() => {
+    const store = () => {
+      try {
+        localStorage.setItem(SAVE_KEY, JSON.stringify(snapshot.current));
+        setSaveError(false);
+      } catch {
+        setSaveError(true);
+      }
+    };
+    const id = window.setInterval(store, 2000);
+    window.addEventListener("pagehide", store);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("pagehide", store);
+      store();
+    };
+  }, []);
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (!moving || showExpansion || showJobs || showCustomize) return;
+      weatherClock.current++;
+      const shiftWeather = weatherClock.current >= 90;
+      if (shiftWeather) weatherClock.current = 0;
+      const nextWeather = (["Clear", "Rain", "Fog"] as const)[Math.floor(Math.random() * 3)];
+      setCareer((c) => {
+        const next = advanceCareer(c, worldRef.current.speed, 1);
+        if (shiftWeather) next.weather = nextWeather;
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [moving, showExpansion, showJobs, showCustomize, jobIndex]);
+  useEffect(() => {
+    const clear = () => {
+      setMoving(false);
+      controls.current = { up: false, down: false, left: false, right: false };
+      gamepadInput.current = { throttle: 0, brake: 0, steer: 0 };
+    };
+    window.addEventListener("blur", clear);
+    document.addEventListener("visibilitychange", clear);
+    return () => {
+      window.removeEventListener("blur", clear);
+      document.removeEventListener("visibilitychange", clear);
+    };
+  }, []);
+  useEffect(() => {
+    if (!moving || showExpansion || showJobs || showCustomize) return;
     const id = window.setInterval(() => {
       const keyboardDirection = (controls.current.right ? 1 : 0) - (controls.current.left ? 1 : 0);
       const direction =
         Math.abs(gamepadInput.current.steer) > 0.08
           ? gamepadInput.current.steer
           : keyboardDirection;
-      setSpeed((current) => {
-        let next = current;
-        const throttle = Math.max(controls.current.up ? 1 : 0, gamepadInput.current.throttle);
-        const brake = Math.max(controls.current.down ? 1 : 0, gamepadInput.current.brake);
-        if (throttle > 0.02) next += 0.65 * throttle;
-        else if (brake > 0.02) next -= 1.35 * brake;
-        else next -= 0.025;
-        next = Math.max(0, Math.min(85, next));
-        setProgress((p) => Math.min(100, p + (next / 64) * 0.006));
-        setFuel((currentFuel) => Math.max(0, currentFuel - next * 0.0000022));
-        const world = worldRef.current;
-        world.speed = next;
-        world.steering += (direction - world.steering) * 0.18;
-        world.heading += direction * (0.003 + next * 0.000035);
-        const distance = next * 0.00055;
-        world.x = Math.max(-102, Math.min(82, world.x + Math.sin(world.heading) * distance));
-        world.y = Math.max(-52, Math.min(52, world.y + Math.cos(world.heading) * distance));
-        setWorldPosition({ x: world.x, y: world.y, heading: world.heading });
-        return next;
-      });
+      let next = worldRef.current.speed;
+      const throttle = Math.max(controls.current.up ? 1 : 0, gamepadInput.current.throttle);
+      const brake = Math.max(controls.current.down ? 1 : 0, gamepadInput.current.brake);
+      if (throttle > 0.02) next += 0.65 * throttle;
+      else if (brake > 0.02) next -= 1.35 * brake;
+      else next -= 0.025;
+      next = Math.max(0, Math.min(85 + live.current.career.engine * 5, next));
+      if (live.current.fuel <= 0 || live.current.career.condition <= 0) next = 0;
+      setProgress((p) => Math.min(100, p + ((next * 0.00055 * 12) / jobs[jobIndex].miles) * 100));
+      setFuel((currentFuel) =>
+        Math.max(0, currentFuel - next * 0.000012 * (1 - live.current.career.economy * 0.15)),
+      );
+      const world = worldRef.current;
+      world.speed = next;
+      world.steering += (direction - world.steering) * 0.18;
+      world.heading += direction * (0.003 + next * 0.000035);
+      const distance = next * 0.00055;
+      world.x = Math.max(-102, Math.min(82, world.x + Math.sin(world.heading) * distance));
+      world.y = Math.max(-52, Math.min(52, world.y + Math.cos(world.heading) * distance));
+      setWorldPosition({ x: world.x, y: world.y, heading: world.heading });
+      setSpeed(next);
 
       setSteering((current) => current + (direction - current) * 0.18);
       setLaneOffset((current) => Math.max(-32, Math.min(32, current + direction * 0.42)));
     }, 50);
     return () => window.clearInterval(id);
-  }, [moving]);
+  }, [moving, showExpansion, showJobs, showCustomize, jobIndex]);
 
   useEffect(() => {
     const keys: Record<string, keyof typeof controls.current> = {
@@ -688,7 +844,13 @@ function App() {
       arrowright: "right",
     };
     const updateKey = (event: KeyboardEvent, pressed: boolean) => {
-      if (pressed && event.key.toLowerCase() === "c") {
+      if (
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement ||
+        event.target instanceof HTMLSelectElement
+      )
+        return;
+      if (pressed && event.key.toLowerCase() === "c" && !event.repeat) {
         setCameraMode((current) =>
           current === "cockpit" ? "hood" : current === "hood" ? "chase" : "cockpit",
         );
@@ -702,6 +864,7 @@ function App() {
       if (!control || event.target instanceof HTMLInputElement) return;
       event.preventDefault();
       controls.current[control] = pressed;
+      if (pressed) setMoving(true);
     };
     const down = (event: KeyboardEvent) => updateKey(event, true);
     const up = (event: KeyboardEvent) => updateKey(event, false);
@@ -711,6 +874,18 @@ function App() {
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
     };
+  }, []);
+
+  useEffect(() => {
+    const close = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowExpansion(false);
+        setShowJobs(false);
+        setShowCustomize(false);
+      }
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
   }, []);
 
   useEffect(() => {
@@ -788,6 +963,7 @@ function App() {
   ];
 
   const acceptJob = (index: number) => {
+    setRoutePaid(false);
     setJobIndex(index);
     setDestination(cities.find((city) => city.name === jobs[index].to) || cities[0]);
     setProgress(4);
@@ -797,15 +973,19 @@ function App() {
   };
 
   const completeRoute = () => {
-    if (progress < 100) return;
-    setMoney((m) => m + job.pay);
+    if (progress < 100 || routePaid) return;
+    const payout = deliveryReward(job.pay, career.condition);
+    setRoutePaid(true);
+    setCareer((c) => ({ ...c, deliveries: c.deliveries + 1, earnings: c.earnings + payout }));
+    setMoney((m) => m + payout);
     setProgress(0);
     setMoving(false);
-    setToast(`Delivery complete. $${job.pay.toLocaleString()} added`);
+    setToast(`Delivery complete. $${payout.toLocaleString()} added`);
   };
 
   const setControl = (control: keyof typeof controls.current, pressed: boolean) => {
     controls.current[control] = pressed;
+    if (pressed) setMoving(true);
     if (pressed && !moving) setMoving(true);
   };
 
@@ -921,6 +1101,25 @@ function App() {
                 </button>
               </div>
             </div>
+            <div className="highway-expansion">
+              <button onClick={() => setShowExpansion(true)}>ROAD ATLAS & TRUCK STOP</button>
+              <span>
+                {String(Math.floor(career.hour)).padStart(2, "0")}:
+                {String(Math.floor((career.hour % 1) * 60)).padStart(2, "0")} ·{" "}
+                {career.weather.toUpperCase()} · CONDITION {career.condition.toFixed(0)}%
+              </span>
+              <small>
+                {saveError
+                  ? "Saving unavailable — progress lasts this visit"
+                  : "LOCAL CAREER SAVED"}{" "}
+                · {career.deliveries} DELIVERIES
+              </small>
+              {progress >= 100 && !routePaid && (
+                <button onClick={completeRoute}>
+                  COMPLETE DELIVERY · ${deliveryReward(job.pay, career.condition).toLocaleString()}
+                </button>
+              )}
+            </div>
             <div className="city-title">
               <small>FREE ROAM • GULF HORIZON STATE</small>
               <h1>{nearestCity.name.toUpperCase()}</h1>
@@ -937,6 +1136,9 @@ function App() {
                   aria-label="Accelerate"
                   onPointerDown={() => setControl("up", true)}
                   onPointerUp={() => setControl("up", false)}
+                  onPointerCancel={() => {
+                    controls.current = { up: false, down: false, left: false, right: false };
+                  }}
                   onPointerLeave={() => setControl("up", false)}
                 >
                   <kbd>W</kbd>
@@ -946,6 +1148,9 @@ function App() {
                   aria-label="Steer left"
                   onPointerDown={() => setControl("left", true)}
                   onPointerUp={() => setControl("left", false)}
+                  onPointerCancel={() => {
+                    controls.current = { up: false, down: false, left: false, right: false };
+                  }}
                   onPointerLeave={() => setControl("left", false)}
                 >
                   <kbd>A</kbd>
@@ -955,6 +1160,9 @@ function App() {
                   aria-label="Brake"
                   onPointerDown={() => setControl("down", true)}
                   onPointerUp={() => setControl("down", false)}
+                  onPointerCancel={() => {
+                    controls.current = { up: false, down: false, left: false, right: false };
+                  }}
                   onPointerLeave={() => setControl("down", false)}
                 >
                   <kbd>S</kbd>
@@ -964,6 +1172,9 @@ function App() {
                   aria-label="Steer right"
                   onPointerDown={() => setControl("right", true)}
                   onPointerUp={() => setControl("right", false)}
+                  onPointerCancel={() => {
+                    controls.current = { up: false, down: false, left: false, right: false };
+                  }}
                   onPointerLeave={() => setControl("right", false)}
                 >
                   <kbd>D</kbd>
@@ -972,7 +1183,11 @@ function App() {
               </div>
             </div>
             <div className="drive-hud">
-              <button className="pause-btn" onClick={() => setMoving(!moving)}>
+              <button
+                aria-label={moving ? "Pause driving" : "Resume driving"}
+                className="pause-btn"
+                onClick={() => setMoving(!moving)}
+              >
                 <Icon name={moving ? "pause" : "play"} size={18} />
               </button>
               <div className="speed">
@@ -1314,6 +1529,207 @@ function App() {
         <div className="toast">
           <Icon name="check" size={17} />
           {toast}
+        </div>
+      )}
+      {showExpansion && (
+        <div className="modal-backdrop">
+          <section
+            className="modal expansion-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Road atlas and truck stop"
+          >
+            <div className="modal-head">
+              <div>
+                <small>29 TRUCKERS / HIGHWAY SERVICES</small>
+                <h2>Road atlas & truck stop</h2>
+                <p>
+                  {regionAt(worldPosition.x, worldPosition.y)} · ${money.toLocaleString()} available
+                </p>
+              </div>
+              <button onClick={() => setShowExpansion(false)} aria-label="Close road atlas">
+                <Icon name="x" />
+              </button>
+            </div>
+            <div className="expansion-body">
+              <svg
+                viewBox="-105 -55 190 115"
+                className="live-atlas"
+                role="img"
+                aria-label="Road network with truck position and destination"
+              >
+                <rect x="-105" y="-55" width="190" height="115" fill="#152d2c" />
+                {roadLinks.map(([a, b]) => (
+                  <line
+                    key={a + "-" + b}
+                    x1={cities[a].x}
+                    y1={cities[a].y}
+                    x2={cities[b].x}
+                    y2={cities[b].y}
+                    stroke="#8b967c"
+                    strokeWidth=".7"
+                  />
+                ))}
+                {cities.map((c) => (
+                  <g key={c.name}>
+                    <circle cx={c.x} cy={c.y} r="1.5" fill={c.color} />
+                    <text x={c.x + 2} y={c.y - 2} fill="#eef2e7" fontSize="3">
+                      {c.short}
+                    </text>
+                  </g>
+                ))}
+                <circle
+                  cx={destination.x}
+                  cy={destination.y}
+                  r="3"
+                  stroke="#f7b500"
+                  fill="none"
+                  strokeWidth=".5"
+                />
+                <path
+                  d="M0 -3 L-1.6 2 L1.6 2Z"
+                  fill="white"
+                  transform={`translate(${worldPosition.x} ${worldPosition.y}) rotate(${(-worldPosition.heading * 180) / Math.PI + 180})`}
+                />
+              </svg>
+              <p className="atlas-caption">
+                White marker: your truck · gold ring: destination. Fictional compressed road
+                network, not real navigation. WASD / arrows steer; C changes camera. Driving pauses
+                while a menu is open.
+              </p>
+              <div className="expansion-grid">
+                <article>
+                  <h3>Truck-stop services</h3>
+                  <p>Radio roadside support is available anywhere. Services park your truck.</p>
+                  <button
+                    disabled={money < serviceCost("fuel", fuel, career.condition) || fuel >= 100}
+                    onClick={() => {
+                      const cost = serviceCost("fuel", fuel, career.condition);
+                      if (money < cost) return;
+                      setMoney((m) => m - cost);
+                      setFuel(100);
+                      setSpeed(0);
+                      worldRef.current.speed = 0;
+                      setMoving(false);
+                      setToast("Tank filled. Ready for the next haul.");
+                    }}
+                  >
+                    Refuel · ${serviceCost("fuel", fuel, career.condition).toLocaleString()}
+                  </button>
+                  <button
+                    disabled={
+                      money < serviceCost("repair", fuel, career.condition) ||
+                      career.condition >= 100
+                    }
+                    onClick={() => {
+                      const cost = serviceCost("repair", fuel, career.condition);
+                      if (money < cost) return;
+                      setMoney((m) => m - cost);
+                      setCareer((c) => ({ ...c, condition: 100 }));
+                      setSpeed(0);
+                      worldRef.current.speed = 0;
+                      setMoving(false);
+                      setToast("Truck serviced. Condition restored.");
+                    }}
+                  >
+                    Repair · ${serviceCost("repair", fuel, career.condition).toLocaleString()}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCareer((c) => ({ ...c, hour: (c.hour + 8) % 24 }));
+                      setSpeed(0);
+                      worldRef.current.speed = 0;
+                      setMoving(false);
+                      setToast("Rested for eight game hours.");
+                    }}
+                  >
+                    Rest 8 hours · free
+                  </button>
+                </article>
+                <article>
+                  <h3>Garage upgrades</h3>
+                  {(["engine", "economy"] as const).map((key) => (
+                    <div key={key}>
+                      <p>
+                        {key === "engine"
+                          ? "Engine · +5 MPH top speed per level"
+                          : "Economy · 15% less fuel per level"}{" "}
+                        ({career[key]}/3)
+                      </p>
+                      <button
+                        disabled={career[key] >= 3 || money < upgradeCost(career[key])}
+                        onClick={() => {
+                          if (career[key] >= 3 || money < upgradeCost(career[key])) return;
+                          setMoney((m) => m - upgradeCost(career[key]));
+                          setCareer((c) => ({ ...c, [key]: c[key] + 1 }));
+                          setToast("Upgrade installed.");
+                        }}
+                      >
+                        {career[key] >= 3
+                          ? "Fully upgraded"
+                          : "Install · $" + upgradeCost(career[key]).toLocaleString()}
+                      </button>
+                    </div>
+                  ))}
+                </article>
+                <article>
+                  <h3>Weather & conditions</h3>
+                  <p>
+                    Choose driving conditions. Rain and fog reduce visibility; headlights appear
+                    after dark.
+                  </p>
+                  {(["Clear", "Rain", "Fog"] as const).map((weather) => (
+                    <button
+                      aria-pressed={career.weather === weather}
+                      key={weather}
+                      onClick={() => setCareer((c) => ({ ...c, weather }))}
+                    >
+                      {weather}
+                    </button>
+                  ))}
+                  <p>
+                    Current truck condition adjusts delivery pay from 80% to 100%. Fuel or condition
+                    at zero stops the truck.
+                  </p>
+                </article>
+                <article>
+                  <h3>Career milestones</h3>
+                  <p>
+                    {career.deliveries} deliveries · ${career.earnings.toLocaleString()} earned
+                  </p>
+                  {milestones.map((m) => (
+                    <button
+                      key={m.goal}
+                      disabled={career.deliveries < m.goal || career.claimed.includes(m.goal)}
+                      onClick={() => {
+                        if (career.deliveries < m.goal || career.claimed.includes(m.goal)) return;
+                        setMoney((v) => v + m.reward);
+                        setCareer((c) => ({ ...c, claimed: [...c.claimed, m.goal] }));
+                      }}
+                    >
+                      {m.name} ·{" "}
+                      {career.claimed.includes(m.goal)
+                        ? "Claimed"
+                        : "$" + m.reward.toLocaleString()}
+                    </button>
+                  ))}
+                </article>
+              </div>
+              <button
+                className="primary-button"
+                onClick={() => {
+                  setShowExpansion(false);
+                  setShowJobs(true);
+                }}
+              >
+                Browse freight contracts
+              </button>
+              <p className="atlas-caption">
+                Saves stay in this browser. No cloud sync. Weather is a selectable simulation
+                setting; scenery is stylized perspective rendering.
+              </p>
+            </div>
+          </section>
         </div>
       )}
     </main>
