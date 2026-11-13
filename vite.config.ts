@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import fs from "node:fs";
 import path from "node:path";
 
-import siteConfiguration from "./.figma/make/site.json";
+import siteConfiguration from "./figma/make/site.json";
 
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -73,7 +73,7 @@ type FigmaSiteConfiguration = {
   };
 };
 
-/** Applies /.figma/make/site.json to the generated document shell. */
+/** Applies /figma/make/site.json to the generated document shell. */
 function figmaSiteConfiguration(config: FigmaSiteConfiguration): Plugin {
   function sanitizeHtmlValue(value: string | undefined): string {
     return value?.replace(/[^a-zA-Z0-9_-]/g, "") || "";
