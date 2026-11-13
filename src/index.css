@@ -2111,3 +2111,150 @@ h2 {
     bottom: 10px;
   }
 }
+
+/* Highway expansion: always-available atlas and service controls. */
+.highway-expansion {
+  position: absolute;
+  z-index: 13;
+  left: 24px;
+  top: 78px;
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 7px;
+  max-width: 330px;
+}
+.highway-expansion button {
+  background: #111b20e8;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font: 700 10px system-ui;
+  letter-spacing: 0.08em;
+  padding: 11px 15px;
+  cursor: pointer;
+}
+.highway-expansion > span {
+  font: 600 9px system-ui;
+  letter-spacing: 0.06em;
+  background: #0d171cd9;
+  padding: 6px 9px;
+  color: #e4ede9;
+}
+.highway-expansion > small {
+  font: 600 7px system-ui;
+  color: #b5cac0;
+  text-shadow: 0 1px 4px #000;
+}
+.highway-expansion ~ .city-title {
+  top: 32%;
+}
+.expansion-modal {
+  max-height: 90svh;
+  overflow: auto;
+}
+.expansion-body {
+  padding: 20px 25px;
+}
+.live-atlas {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  border: 1px solid #3d5350;
+  background: #152d2c;
+}
+.atlas-caption {
+  font: 11px/1.7 system-ui;
+  color: #aabcb7;
+}
+.expansion-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.expansion-grid article {
+  border: 1px solid #34423f;
+  padding: 14px;
+  background: #192421;
+}
+.expansion-grid h3 {
+  font: 600 17px system-ui;
+  margin: 0 0 8px;
+}
+.expansion-grid p {
+  font: 11px/1.7 system-ui;
+  color: #b7c2bd;
+}
+.expansion-grid button {
+  border: 1px solid #65705b;
+  background: #27392f;
+  color: #e6dbad;
+  padding: 9px 11px;
+  font: 600 10px system-ui;
+  margin: 3px;
+  cursor: pointer;
+}
+.expansion-grid button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.expansion-grid button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+button:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+@media (max-width: 760px) {
+  .scene-topline {
+    left: 10px !important;
+    right: 10px !important;
+    gap: 5px;
+  }
+  .live-pill {
+    display: none !important;
+  }
+  .highway-expansion {
+    top: 65px;
+    left: 12px;
+    max-width: calc(100% - 24px);
+  }
+  .highway-expansion button {
+    font-size: 9px;
+    padding: 9px 11px;
+  }
+  .highway-expansion ~ .city-title {
+    top: 37%;
+  }
+  .expansion-body {
+    padding: 14px;
+  }
+  .expansion-grid {
+    grid-template-columns: 1fr;
+  }
+  .expansion-modal .modal-head {
+    padding: 16px;
+  }
+  .expansion-modal .modal-head h2 {
+    font-size: 23px;
+  }
+  .expansion-modal {
+    max-height: 92svh;
+  }
+  .game-shell.immersive .city-title {
+    top: 34%;
+  }
+  .game-shell.immersive .drive-controls {
+    right: 12px;
+    bottom: 104px;
+  }
+  .game-shell.immersive .drive-hud {
+    min-height: 65px;
+  }
+  .expansion-grid button {
+    min-height: 38px;
+  }
+  .live-atlas {
+    max-height: 170px;
+  }
+}
