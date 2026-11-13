@@ -772,12 +772,12 @@ function App() {
     const id = window.setInterval(() => {
       if (!moving || showExpansion || showJobs || showCustomize) return;
       weatherClock.current++;
+      const shiftWeather = weatherClock.current >= 90;
+      if (shiftWeather) weatherClock.current = 0;
+      const nextWeather = (["Clear", "Rain", "Fog"] as const)[Math.floor(Math.random() * 3)];
       setCareer((c) => {
         const next = advanceCareer(c, worldRef.current.speed, 1);
-        if (weatherClock.current >= 90) {
-          weatherClock.current = 0;
-          next.weather = (["Clear", "Rain", "Fog"] as const)[Math.floor(Math.random() * 3)];
-        }
+        if (shiftWeather) next.weather = nextWeather;
         return next;
       });
     }, 1000);

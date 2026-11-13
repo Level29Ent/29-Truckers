@@ -2258,3 +2258,8 @@ button:focus-visible {
     max-height: 170px;
   }
 }
+@media (min-width: 761px) {
+  .game-shell.immersive .highway-expansion ~ .city-title {
+    top: 26%;
+  }
+}
